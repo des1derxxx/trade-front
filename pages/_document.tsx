@@ -7,6 +7,7 @@ export default function Document() {
       <body className="antialiased">
         <Main />
         <NextScript />
+        <script type="text/javascript" src="https://s3.tradingview.com/tv.js"></script>
       </body>
     </Html>
   );

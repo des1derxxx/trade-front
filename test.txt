@@ -1,0 +1,374 @@
+import { useEffect, useState } from 'react';
+import {
+  Container,
+  Paper,
+  Title,
+  Select,
+  Group,
+  NumberInput,
+  Button,
+  Text,
+  Table,
+  Badge,
+  ActionIcon,
+  Stack,
+  Grid,
+  Card,
+} from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
+import { notifications } from '@mantine/notifications';
+import axios from 'axios';
+import { X, Settings } from 'lucide-react';
+import { set } from 'date-fns';
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const FOREX_API_URL = 'https://api.finage.co.uk';
+const FOREX_KEY = process.env.NEXT_PUBLIC_FINAGE_KEY
+
+interface ExchangeRateResponse {
+  success: boolean;
+  result: number;
+}
+
+interface UserProfileResponse {
+  demoBalance: number;
+}
+
+interface Trade {
+  _id: string;
+  symbol: string;
+  type: 'buy' | 'sell';
+  amount: number;
+  price: number;
+  leverage: number;
+  total: number;
+  status: 'open' | 'closed';
+  profit?: number;
+  stopLoss?: number;
+  takeProfit?: number;
+  createdAt: string;
+}
+
+interface TradeFormData {
+  symbol: string;
+  type: 'buy' | 'sell';
+  amount: number;
+  price: number;
+  stopLoss: number;
+  takeProfit: number;
+  leverage: number;
+}
+
+const ForexTradingPage = () => {
+  const [currentPrice, setCurrentPrice] = useState<number>(0);
+  const [trades, setTrades] = useState<Trade[]>([]);
+  const [balance, setBalance] = useState<number>(10000);
+  const [opened, { open, close }] = useDisclosure(false);
+  const [tradeForm, setTradeForm] = useState<TradeFormData>({
+    symbol: 'EURUSD',
+    type: 'buy',
+    amount: 100,
+    price: 0,
+    stopLoss: 0,
+    takeProfit: 0,
+    leverage: 1,
+  });
+
+  const fetchCurrentPrice = async (): Promise<void> => {
+    try {
+      const response = await axios.get<ExchangeRateResponse>(`https://api.twelvedata.com/price?symbol=EUR/USD&apikey=72c788c4e73249fc8aed64e2f06bd900`, {
+        // params: {
+        //   apiKey: FOREX_KEY,
+        // },
+      });
+  
+      const price = response.data?.price;
+      console.log(price)
+      const priceNumber = parseFloat(price);
+
+      // Проверяем, что priceNumber является числом и не NaN
+      if (!isNaN(priceNumber)) {
+        setCurrentPrice(priceNumber);
+        console.log(priceNumber);
+        setTradeForm((prev) => ({ ...prev, price: priceNumber }));
+      } else {
+        throw new Error('Invalid price fetched');
+      }
+    } catch (error) {
+      setCurrentPrice(0); // Fallback to prevent breaking the UI
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to fetch forex price',
+        color: 'red',
+      });
+    }
+  };
+
+  const fetchUserData = async (): Promise<void> => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get<UserProfileResponse>(`${API_URL}/api/users/profile`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      setBalance(response.data.demoBalance);
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to fetch user data',
+        color: 'red',
+      });
+    }
+  };
+
+  const fetchTrades = async (): Promise<void> => {
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get<Trade[]>(`${API_URL}/api/trading/trades`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      setTrades(response.data);
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to fetch trades',
+        color: 'red',
+      });
+    }
+  };
+
+  const handleTrade = async (): Promise<void> => {
+    try {
+      setTradeForm((prev) => ({ ...prev, price: currentPrice }));
+      const updatedForm = { ...tradeForm, price: currentPrice }; // Явное обновление
+
+      const token = localStorage.getItem('token');
+      await axios.post(`${API_URL}/api/trading/trade`, { ...tradeForm, price: currentPrice }, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      notifications.show({
+        title: 'Success',
+        message: 'Trade opened successfully',
+        color: 'green',
+      });
+
+      fetchUserData();
+      fetchTrades();
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to create trade',
+        color: 'red',
+      });
+    }
+  };
+
+  const handleCloseTrade = async (tradeId: string): Promise<void> => {
+    try {
+      const token = localStorage.getItem('token');
+      await axios.post(
+        `${API_URL}/api/trading/trade/${tradeId}/close`,
+        { currentPrice },
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+      notifications.show({
+        title: 'Success',
+        message: 'Trade closed successfully',
+        color: 'green',
+      });
+      fetchUserData();
+      fetchTrades();
+    } catch (error) {
+      notifications.show({
+        title: 'Error',
+        message: 'Failed to close trade',
+        color: 'red',
+      });
+    }
+  };
+
+  const calculatePNL = (trade: Trade): number => {
+    const positionValue = trade.amount / trade.leverage; // Маржинальная стоимость сделки
+    if (trade.type === 'buy') {
+      return (currentPrice - trade.price) * positionValue;
+    } else {
+      return (trade.price - currentPrice) * positionValue;
+    }
+  };
+  
+  const calculatePLPercentage = (trade: Trade): number => {
+    const pnl = calculatePNL(trade); // Прибыль/убыток
+    const margin = (trade.amount * trade.price) / trade.leverage; // Маржа
+    return (pnl / margin) * 100; // P/L в процентах
+  };
+
+  useEffect(() => {
+    fetchCurrentPrice();
+    const interval = setInterval(fetchCurrentPrice, 9000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    fetchUserData();
+    fetchTrades();
+  }, []);
+
+  return (
+    <Container size="xl" mt="md">
+      <Paper shadow="sm" radius="md" p="md">
+        <Group style={{ justifyContent: 'space-between' }} mb="md">
+          <Title order={2}>EUR/USD Trading</Title>
+          Current Rate: ${typeof currentPrice === 'number' ? currentPrice.toFixed(4) : 'Loading...'}
+        </Group>
+        <Grid>
+          <Grid.Col span={4}>
+            <Card shadow="sm" radius="md" p="md" mb="md">
+              <Title order={4}>Demo Balance</Title>
+              <Text size="xl" fw={700} color="blue">
+                {/* ${balance.toFixed(2)} */}
+              </Text>
+            </Card>
+            <Paper shadow="sm" radius="md" p="md">
+              <Stack>
+                <NumberInput
+                  label="Amount"
+                  value={parseFloat(tradeForm.amount.toFixed(8))}
+                  onChange={(value) => setTradeForm((prev) => ({ ...prev, amount: Number(value) || 0 }))}
+                  min={0}
+                />
+                <NumberInput
+                  label="Leverage"
+                  value={tradeForm.leverage}
+                  onChange={(value) => setTradeForm((prev) => ({ ...prev, leverage: Number(value) || 1 }))}
+                  min={1}
+                  max={100}
+                />
+                <Select
+                  label="Type"
+                  data={[
+                    { value: 'buy', label: 'Buy' },
+                    { value: 'sell', label: 'Sell' },
+                  ]}
+                  value={tradeForm.type}
+                  onChange={(value) => {
+                    if (value) {
+                      setTradeForm(prev => ({ 
+                        ...prev, 
+                        type: value as 'buy' | 'sell' 
+                      }));
+                    }
+                  }}
+                />
+                <NumberInput
+                  label="Stop Loss"
+                  value={tradeForm.stopLoss}
+                  onChange={(value) => setTradeForm((prev) => ({ ...prev, stopLoss: Number(value) || 0 }))}
+                  min={0}
+                />
+                <NumberInput
+                  label="Take Profit"
+                  value={tradeForm.takeProfit}
+                  onChange={(value) => setTradeForm((prev) => ({ ...prev, takeProfit: Number(value) || 0 }))}
+                  min={0}
+                />
+<Button
+  fullWidth
+  color={tradeForm.type === 'buy' ? 'green' : 'red'}
+  onClick={handleTrade}
+>
+  Place {tradeForm.type.toUpperCase()} Order at $
+  {(currentPrice || 0).toFixed(4)}
+</Button>
+              </Stack>
+            </Paper>
+          </Grid.Col>
+          <Grid.Col span={8}>
+            <iframe
+              src={`https://s.tradingview.com/widgetembed/?frameElementId=tradingview_widget&symbol=FX:EURUSD&interval=D&hidesidetoolbar=0&symboledit=1&saveimage=1&toolbarbg=f1f3f6&studies=[]&theme=Light&style=1&timezone=exchange&withdateranges=1&showpopupbutton=1&studies_overrides={}&overrides={}&enabled_features=[]&disabled_features=[]&showpopupbutton=1&locale=en`}
+              style={{
+                width: '100%',
+                height: '600px',
+                border: 'none',
+              }}
+            />
+          </Grid.Col>
+        </Grid>
+      </Paper>
+
+      <Paper shadow="sm" radius="md" p="md" mt="md">
+        <Title order={3} mb="md">Open Positions</Title>
+        <Table>
+          <thead>
+            <tr>
+              <th>Type</th>
+              <th>Amount</th>
+              <th>Entry Price</th>
+              <th>Current Price</th>
+              <th>PNL</th>
+              <th>SL/TP</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+  {trades.filter(trade => trade.status === 'open').map((trade) => {
+    const pnl = calculatePNL(trade);
+    const plPercentage = calculatePLPercentage(trade); // Расчёт P/L %
+
+    return (
+      <tr key={trade._id}>
+        <td>
+          <Badge color={trade.type === 'buy' ? 'green' : 'red'}>
+            {trade.type.toUpperCase()}
+          </Badge>
+        </td>
+        <td>{trade.amount}</td>
+        <td>${trade.price.toFixed(5)}</td>
+        <td>${currentPrice.toFixed(5)}</td>
+        <td>
+          <Text color={pnl >= 0 ? 'green' : 'red'}>
+            ${pnl.toFixed(2)}
+          </Text>
+        </td>
+        <td>
+          <Text color={plPercentage >= 0 ? 'green' : 'red'}>
+            {plPercentage.toFixed(2)}%
+          </Text>
+        </td>
+        <td>
+          <Group gap="xs">
+            <Text size="sm">SL: ${trade.stopLoss}</Text>
+            <Text size="sm">TP: ${trade.takeProfit}</Text>
+          </Group>
+        </td>
+        <td>
+          <Group gap="xs">
+            <ActionIcon color="red" onClick={() => handleCloseTrade(trade._id)}>
+              <X size={16} />
+            </ActionIcon>
+            <ActionIcon onClick={open}>
+              <Settings size={16} />
+            </ActionIcon>
+          </Group>
+        </td>
+      </tr>
+    );
+  })}
+</tbody>
+        </Table>
+      </Paper>
+      
+    </Container>
+  );
+};
+
+export default ForexTradingPage;
