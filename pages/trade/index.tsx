@@ -302,148 +302,219 @@ const ForexTradingPage = () => {
   }, []);
 
   return (
-    <Container size="xl" mt="md">
-      <Paper shadow="sm" radius="md" p="md">
-        <Group justify="space-between" mb="md">
-          <Title order={2}>Forex Trading</Title>
-          <Text>
-            Current Rate: $
-            {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
-          </Text>
-        </Group>
-        <Grid>
-          <Grid.Col span={4}>
-            <Card shadow="sm" radius="md" p="md" mb="md">
-              <Title order={4}>Demo Balance - ${balance}</Title>
-            </Card>
-            <Paper shadow="sm" radius="md" p="md">
-              <Stack>
-                <NumberInput
-                  label="Lot Size"
-                  description="1.00 lot = $200 (100.00 = $20,000)"
-                  value={tradeForm.lotSize}
-                  onChange={(value) =>
-                    setTradeForm((prev) => ({
-                      ...prev,
-                      lotSize: Number(value) || 0,
-                    }))
-                  }
-                  decimalScale={2}
-                  min={0.01}
-                  max={10000000}
-                  step={0.01}
-                />
+    <div className="bg-black text-white min-h-screen">
+      <div className="mx-8 pt-6">
+        <div className="rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-6 shadow-lg shadow-cyan-500/20">
+          <div className="flex justify-between">
+            <Text className="text-3xl font-bold text-white">FOREX TRADING</Text>
+            <Badge className="bg-gradient-to-r from-pink-600 to-cyan-600 text-white px-3 py-1 rounded">
+              RATE: ${formatPrice(currentPair ? pairPrices[currentPair] : 0)}
+            </Badge>
+          </div>
 
-                <div className="space-y-1">
-                  <Text size="sm" c="dimmed">
-                    Position Size:{" "}
-                    {formatNumber(lotsToUnits(tradeForm.lotSize))} USD
-                  </Text>
-                </div>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
+            {/* Left Column - Trading Controls */}
+            <div className="lg:col-span-4">
+              <div className="rounded-lg border border-pink-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-4 mb-6 shadow-lg shadow-pink-500/20">
+                <Text className="text-xl text-cyan-400">
+                  <span className="text-pink-500 font-bold">DEMO BALANCE:</span>{" "}
+                  ${balance}
+                </Text>
+              </div>
 
-                <NumberInput
-                  label="Stop Loss"
-                  value={tradeForm.stopLoss}
-                  onChange={(value) =>
-                    setTradeForm((prev) => ({
-                      ...prev,
-                      stopLoss: Number(value) || 0,
-                    }))
-                  }
-                  min={0}
-                  decimalScale={5}
-                />
-
-                <NumberInput
-                  label="Take Profit"
-                  value={tradeForm.takeProfit}
-                  onChange={(value) =>
-                    setTradeForm((prev) => ({
-                      ...prev,
-                      takeProfit: Number(value) || 0,
-                    }))
-                  }
-                  min={0}
-                  decimalScale={5}
-                />
-
-                <Group grow>
-                  <Button color="green" onClick={() => handleTrade("buy")}>
-                    Buy at $
-                    {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
-                  </Button>
-                  <Button color="red" onClick={() => handleTrade("sell")}>
-                    Sell at $
-                    {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
-                  </Button>
-                </Group>
-              </Stack>
-            </Paper>
-          </Grid.Col>
-          <Grid.Col span={8}>
-            <Select
-              label="Выбор валютной пары"
-              placeholder="Выбор"
-              data={["FX:EURUSD", "FX:USDCHF", "TVC:GOLD"]}
-              value={currentPair}
-              onChange={(value) => value && setCurrentPair(value)}
-            />
-            <TradingViewChart ticket={currentPair} />
-          </Grid.Col>
-        </Grid>
-      </Paper>
-
-      <Paper shadow="sm" radius="md" p="md" mt="md">
-        <Title order={3} mb="md">
-          Open Positions
-        </Title>
-        <Table>
-          <thead>
-            <tr>
-              <th>Type</th>
-              <th>Amount</th>
-              <th>Entry Price</th>
-              <th>PNL</th>
-              <th>SL/TP</th>
-              <th>Action</th>
-            </tr>
-          </thead>
-          <tbody>
-            {trades
-              .filter((trade) => trade?.status === "open")
-              .map((trade) => (
-                <tr key={trade._id}>
-                  <td>
-                    <Badge color={trade.type === "buy" ? "green" : "red"}>
-                      {trade.type?.toUpperCase()}
-                    </Badge>
-                  </td>
-                  <td>{formatNumber(trade.lotSize)}</td>
-                  <td>${formatPrice(trade.entryPrice)}</td>
-                  <td>
-                    <Text c={calculatePNL(trade) >= 0 ? "green" : "red"}>
-                      ${formatNumber(Math.abs(calculatePNL(trade)))}
+              <div className="rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-4 shadow-lg shadow-cyan-500/20">
+                <div className="space-y-4">
+                  <div>
+                    <Text className="text-pink-500 font-bold mb-1">
+                      LOT SIZE
                     </Text>
-                  </td>
-                  <td>
-                    SL: ${formatPrice(trade.stopLoss)} / TP: $
-                    {formatPrice(trade.takeProfit)}
-                  </td>
-                  <td>
-                    <ActionIcon
-                      color="red"
-                      onClick={() => trade._id && handleCloseTrade(trade._id)}
-                      disabled={!trade._id}
+                    <div className="relative">
+                      <input
+                        type="number"
+                        className="w-full bg-black border border-cyan-500 rounded px-3 py-2 text-cyan-400"
+                        value={tradeForm.lotSize}
+                        onChange={(e) =>
+                          setTradeForm((prev) => ({
+                            ...prev,
+                            lotSize: Number(e.target.value) || 0,
+                          }))
+                        }
+                        min={0.01}
+                        max={10000000}
+                        step={0.01}
+                      />
+                    </div>
+                    <Text className="text-xs mt-1 text-gray-400">
+                      1.00 lot = $200 (100.00 = $20,000)
+                    </Text>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Text className="text-cyan-400">
+                      <span className="text-pink-500 font-bold">
+                        POSITION SIZE:
+                      </span>{" "}
+                      {formatNumber(lotsToUnits(tradeForm.lotSize))} USD
+                    </Text>
+                  </div>
+
+                  <div>
+                    <Text className="text-pink-500 font-bold mb-1">
+                      STOP LOSS
+                    </Text>
+                    <input
+                      type="number"
+                      className="w-full bg-black border border-cyan-500 rounded px-3 py-2 text-cyan-400"
+                      value={tradeForm.stopLoss}
+                      onChange={(e) =>
+                        setTradeForm((prev) => ({
+                          ...prev,
+                          stopLoss: Number(e.target.value) || 0,
+                        }))
+                      }
+                      min={0}
+                      step={0.00001}
+                    />
+                  </div>
+
+                  <div>
+                    <Text className="text-pink-500 font-bold mb-1">
+                      TAKE PROFIT
+                    </Text>
+                    <input
+                      type="number"
+                      className="w-full bg-black border border-cyan-500 rounded px-3 py-2 text-cyan-400"
+                      value={tradeForm.takeProfit}
+                      onChange={(e) =>
+                        setTradeForm((prev) => ({
+                          ...prev,
+                          takeProfit: Number(e.target.value) || 0,
+                        }))
+                      }
+                      min={0}
+                      step={0.00001}
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <button
+                      className="bg-gradient-to-r from-cyan-900 to-cyan-600 text-white py-2 px-4 rounded border border-cyan-500 shadow-md shadow-cyan-500/20 hover:shadow-lg hover:shadow-cyan-500/40"
+                      onClick={() => handleTrade("buy")}
                     >
-                      <X size={16} />
-                    </ActionIcon>
-                  </td>
+                      LONG @ $
+                      {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
+                    </button>
+                    <button
+                      className="bg-gradient-to-r from-pink-900 to-pink-600 text-white py-2 px-4 rounded border border-pink-500 shadow-md shadow-pink-500/20 hover:shadow-lg hover:shadow-pink-500/40"
+                      onClick={() => handleTrade("sell")}
+                    >
+                      SHORT @ $
+                      {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Chart */}
+            <div className="lg:col-span-8">
+              <div className="rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-4 mb-6 shadow-lg shadow-cyan-500/20">
+                <select
+                  className="w-full bg-black border border-pink-500 rounded px-3 py-2 text-cyan-400 mb-4"
+                  value={currentPair}
+                  onChange={(e) =>
+                    e.target.value && setCurrentPair(e.target.value)
+                  }
+                >
+                  <option value="">SELECT PAIR</option>
+                  <option value="FX:EURUSD">FX:EURUSD</option>
+                  <option value="FX:USDCHF">FX:USDCHF</option>
+                  <option value="TVC:GOLD">TVC:GOLD</option>
+                </select>
+                <div className="border border-cyan-500 rounded">
+                  <TradingViewChart ticket={currentPair} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Open Positions Table */}
+        <div className="mt-8 mb-8">
+          <Text className="text-3xl font-bold text-white mb-6">
+            OPEN POSITIONS
+          </Text>
+          <div className="rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-2 shadow-lg shadow-cyan-500/20 overflow-x-auto">
+            <table className="min-w-full">
+              <thead>
+                <tr className="border-b border-cyan-500/30">
+                  <th className="px-4 py-3 text-left text-cyan-400">TYPE</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">SIZE</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">ENTRY</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">PNL</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">SL/TP</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">ACTION</th>
                 </tr>
-              ))}
-          </tbody>
-        </Table>
-      </Paper>
-    </Container>
+              </thead>
+              <tbody>
+                {trades
+                  .filter((trade) => trade?.status === "open")
+                  .map((trade) => (
+                    <tr
+                      key={trade._id}
+                      className="border-b border-cyan-500/10 hover:bg-cyan-900/20"
+                    >
+                      <td className="px-4 py-3">
+                        {trade.type === "buy" ? (
+                          <Badge className="bg-cyan-900/50 text-cyan-400 border border-cyan-500 px-2 py-1 rounded">
+                            LONG
+                          </Badge>
+                        ) : (
+                          <Badge className="bg-pink-900/50 text-pink-400 border border-pink-500 px-2 py-1 rounded">
+                            SHORT
+                          </Badge>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-white">
+                        {formatNumber(trade.lotSize)}
+                      </td>
+                      <td className="px-4 py-3 text-white">
+                        ${formatPrice(trade.entryPrice)}
+                      </td>
+                      <td
+                        className={`px-4 py-3 ${
+                          calculatePNL(trade) >= 0
+                            ? "text-cyan-400"
+                            : "text-pink-500"
+                        }`}
+                      >
+                        ${formatNumber(Math.abs(calculatePNL(trade)))}
+                      </td>
+                      <td className="px-4 py-3 text-white">
+                        <span className="text-pink-500 font-bold">SL:</span> $
+                        {formatPrice(trade.stopLoss)} /
+                        <span className="text-cyan-400 font-bold"> TP:</span> $
+                        {formatPrice(trade.takeProfit)}
+                      </td>
+                      <td className="px-4 py-3">
+                        <button
+                          className="bg-pink-900/50 text-pink-400 border border-pink-500 p-1 rounded hover:bg-pink-800/50"
+                          onClick={() =>
+                            trade._id && handleCloseTrade(trade._id)
+                          }
+                          disabled={!trade._id}
+                        >
+                          <X size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 };
 

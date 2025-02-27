@@ -46,6 +46,7 @@ interface UserData {
   _id?: string;
   username: string;
   demoBalance: number;
+  firstBalance: number;
   role: string;
   isActive: boolean;
   group: number;
@@ -108,6 +109,10 @@ const ProfilePage = () => {
     null
   );
   const [tradeStats, setTradeStats] = useState<TradeStatistics | null>(null);
+  const [userPercent, setUserPercent] = useState<number | null>(null);
+  const [userProfitPercentages, setUserProfitPercentages] = useState<{
+    [key: string]: number;
+  }>({});
   const [isLoadingTrades, setIsLoadingTrades] = useState(false);
   const [socket, setSocket] = useState(null);
   const [livePrices, setLivePrices] = useState({});
@@ -177,6 +182,45 @@ const ProfilePage = () => {
     const price = livePrices[trade.symbol];
     return price ? `$${parseFloat(price).toFixed(7)}` : "Загрузка...";
   };
+
+  const fetchUsersProfitPercentages = async (usernames: string[]) => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) throw new Error("Отсутствует токен авторизации");
+
+      // Create an array of promises for each username
+      const promises = usernames.map((username) =>
+        axios.get(`${API_URL}/api/trading/getUserCalculatedStats/${username}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+      );
+
+      // Wait for all requests to complete
+      const responses = await Promise.all(promises);
+
+      // Create a mapping of username to profit percentage
+      const percentages = responses.reduce((acc, response, index) => {
+        acc[usernames[index]] = response.data.profitPercent;
+        return acc;
+      }, {} as { [key: string]: number });
+
+      setUserProfitPercentages(percentages);
+    } catch (error) {
+      console.error(
+        "Ошибка при получении данных о прибыли пользователей:",
+        error
+      );
+      setError("Не удалось загрузить данные о прибыли пользователей");
+    }
+  };
+
+  useEffect(() => {
+    if (selectedGroup !== null) {
+      const usersInGroup = getUsersByGroup(selectedGroup);
+      const usernames = usersInGroup.map((user) => user.username);
+      fetchUsersProfitPercentages(usernames);
+    }
+  }, [selectedGroup]);
 
   // Helper function to safely parse JSON responses
   const parseJsonResponse = async (response: Response) => {
@@ -378,6 +422,34 @@ const ProfilePage = () => {
     fetchUserTradesAndStats("admin");
   }, []);
 
+  useEffect(() => {
+    const fetchUserPercent = async () => {
+      try {
+        const token = localStorage.getItem("token");
+        const user = localStorage.getItem("user");
+        if (!user) throw new Error("Отсутствует информация о пользователе");
+
+        const { username } = JSON.parse(user);
+        if (!username)
+          throw new Error("Не найден username в данных пользователя");
+
+        const response = await axios.get(
+          `${API_URL}/api/trading/getUserCalculatedStats/${username}`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        console.log(response.data);
+        setUserPercent(response.data.profitPercent); // Предположим, что процент приходит в поле `percentage`
+      } catch (error) {
+        console.error("Ошибка при получении данных:", error);
+      }
+    };
+
+    fetchUserPercent();
+  }, []);
+
   const handleOpenAccountModal = async (username: string) => {
     const account = accounts.find((acc) => acc.username === username);
     if (account) {
@@ -409,6 +481,12 @@ const ProfilePage = () => {
       fetchGroupAndAccount();
     }
   }, [isTrackingModalOpen]);
+
+  useEffect(() => {
+    if (isManageModalOpen) {
+      fetchAccounts();
+    }
+  }, [isManageModalOpen]);
 
   const handleCreateUser = async () => {
     if (!newUserData.username || !newUserData.password) {
@@ -527,7 +605,7 @@ const ProfilePage = () => {
 
         <Grid>
           <Grid.Col span={{ base: 12, md: userData.role === "admin" ? 6 : 12 }}>
-            <div className="rounded-xl bg-gray-800/30 border border-cyan-400/30 p-8 backdrop-blur-sm shadow-lg shadow-cyan-500/20">
+            <div className="rounded-xl bg-gray-800/30 border border-cyan-400/30 p-8 backdrop-blur-sm shadow-lg shadow-cyan-500/20 bg-gradient-to-r from-purple-700/20 to-cyan-900/20">
               <Stack align="center" className="mb-6">
                 <div className="w-20 h-20 rounded-full bg-gradient-to-r from-cyan-500 to-pink-500 flex items-center justify-center text-2xl font-bold">
                   {userData.username.charAt(0).toUpperCase()}
@@ -543,9 +621,20 @@ const ProfilePage = () => {
                   <Text className="text-lg">{userData.role}</Text>
                 </div>
                 <div>
+                  <Text className="text-sm text-cyan-400 mb-1">
+                    Изначальный баланс
+                  </Text>
+                  <Text className="text-lg font-bold">
+                    {userData.firstBalance.toLocaleString()} ${" "}
+                  </Text>
+                </div>
+                <div>
                   <Text className="text-sm text-cyan-400">Демо баланс</Text>
                   <Text className="text-lg font-bold">
-                    {userData.demoBalance.toLocaleString()} $
+                    {userData.demoBalance.toLocaleString()} ${" "}
+                    {userPercent !== null
+                      ? ` (${userPercent.toFixed(2)}%)`
+                      : " (загрузка...)"}
                   </Text>
                 </div>
                 <div>
@@ -558,7 +647,7 @@ const ProfilePage = () => {
 
           {userData.role === "admin" && (
             <Grid.Col span={{ base: 12, md: 6 }}>
-              <div className="rounded-xl bg-gray-800/30 border border-cyan-400/30 p-8 backdrop-blur-sm shadow-lg shadow-cyan-500/20">
+              <div className="rounded-xl bg-gray-800/30 border border-cyan-400/30 p-8 backdrop-blur-sm shadow-lg shadow-cyan-500/20 bg-gradient-to-r from-purple-700/20 to-cyan-900/20">
                 <Text className="text-xl font-bold mb-6 bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
                   Панель администратора
                 </Text>
@@ -595,8 +684,8 @@ const ProfilePage = () => {
           onClose={() => setIsTrackingModalOpen(false)}
           size="xl"
           classNames={{
-            modal: "bg-gray-900/95 backdrop-blur-sm z-50 ", // Стили для самого модального окна
-            overlay: "backdrop-blur-sm", // Стили для затемнённого фона
+            modal: "bg-gray-900/95 backdrop-blur-sm z-50 ",
+            overlay: "backdrop-blur-sm",
           }}
           title={
             <Text className="text-xl font-bold bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
@@ -633,10 +722,10 @@ const ProfilePage = () => {
                 {getUsersByGroup(selectedGroup).length > 0 ? (
                   <div className="space-y-3">
                     {getUsersByGroup(selectedGroup).map((user) => {
-                      const percentage = calculatePercentage(
-                        user.firstBalance,
-                        user.demoBalance
-                      );
+                      // Get the profit percentage from the state instead of calculating it
+                      const profitPercent =
+                        userProfitPercentages[user.username] || 0;
+
                       return (
                         <div
                           key={user.username}
@@ -647,14 +736,14 @@ const ProfilePage = () => {
                             <Text>{user.username}</Text>
                             <Text
                               className={
-                                percentage >= 0
+                                profitPercent >= 0
                                   ? "text-emerald-400"
                                   : "text-red-400"
                               }
                             >
-                              {percentage >= 0
-                                ? `+${percentage.toFixed(2)}%`
-                                : `${percentage.toFixed(2)}%`}
+                              {profitPercent >= 0
+                                ? `+${profitPercent.toFixed(2)}%`
+                                : `${profitPercent.toFixed(2)}%`}
                             </Text>
                           </div>
                           <button
@@ -678,7 +767,6 @@ const ProfilePage = () => {
             )}
           </Stack>
         </Modal>
-
         <Modal
           opened={isAccountModalOpen}
           onClose={() => {
@@ -698,7 +786,7 @@ const ProfilePage = () => {
           }
         >
           <Stack className="space-y-6">
-            <div className="rounded-lg bg-gray-800/30 border border-cyan-400/30 p-6">
+            <div className="rounded-lg bg-black border border-cyan-400/30 p-6">
               <Text className="text-lg font-bold mb-4 bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
                 Информация о пользователе
               </Text>
@@ -719,7 +807,7 @@ const ProfilePage = () => {
             </div>
 
             {tradeStats && (
-              <div className="rounded-lg bg-gray-800/30 border border-cyan-400/30 p-6">
+              <div className="rounded-lg bg-black border border-cyan-400/30 p-6">
                 <Text className="text-lg font-bold mb-4 bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
                   Статистика торговли
                 </Text>
@@ -778,7 +866,7 @@ const ProfilePage = () => {
               </div>
             )}
 
-            <div className="rounded-lg bg-gray-800/30 border border-cyan-400/30 p-6">
+            <div className="rounded-lg bg-black border border-cyan-400/30 p-6">
               <Text className="text-lg font-bold mb-4 bg-gradient-to-r from-cyan-400 to-pink-500 bg-clip-text text-transparent">
                 История торгов
               </Text>

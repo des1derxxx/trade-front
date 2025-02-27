@@ -39,13 +39,14 @@ const AppHeader = () => {
         <Text
           size="xl"
           fw={800}
+          className="italic"
           style={{
             color: "#3EB8FF",
             letterSpacing: "0.15em",
             textShadow: "0 0 15px rgba(62, 184, 255, 0.6)",
           }}
         >
-          CRYPTOPLACE
+          PROP TRADING
         </Text>
 
         <Group gap="xl">

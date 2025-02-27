@@ -31,7 +31,7 @@ const TradingViewChart = ({ ticket }: TradingViewChartProps) => {
             symbol: ticket,
             interval: "1D",
             timezone: "Etc/UTC",
-            theme: "light",
+            theme: "dark",
             style: "1",
             locale: "ru",
             enable_publishing: false,
