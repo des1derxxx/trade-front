@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import {
   Container,
   Paper,
@@ -52,6 +52,7 @@ interface Trade {
   stopLoss?: number;
   takeProfit?: number;
   createdAt: string;
+  liquidationPrice: number;
 }
 
 interface TradeFormData {
@@ -74,7 +75,6 @@ interface PairPrices {
 const ForexTradingPage = () => {
   const [socket, setSocket] = useState<Socket | null>(null);
   const [currentPair, setCurrentPair] = useState<string | null>("FX:EURUSD");
-  //const [currentPrice, setCurrentPrice] = useState<number>(0);
   const [pairPrices, setPairPrices] = useState<PairPrices>({
     "FX:EURUSD": 0,
     "FX:USDCHF": 0,
@@ -91,6 +91,12 @@ const ForexTradingPage = () => {
     takeProfit: 0,
     amount: 0,
   });
+  const [currentTradeType, setCurrentTradeType] = useState<"buy" | "sell">(
+    "buy"
+  );
+
+  // Reference to store the interval ID for position updates
+  const positionUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     const newSocket = io(API_URL);
@@ -107,7 +113,10 @@ const ForexTradingPage = () => {
 
       // Обновляем форму только для текущей выбранной пары
       if (currentPair && priceMap[currentPair]) {
-        setTradeForm((prev) => ({ ...prev, price: priceMap[currentPair] }));
+        setTradeForm((prev) => ({
+          ...prev,
+          price: priceMap[currentPair],
+        }));
       }
     });
 
@@ -206,10 +215,129 @@ const ForexTradingPage = () => {
     return parseFloat(pnl.toFixed(2));
   };
 
+  // Validation for stop loss and take profit based on trade type
+  const validateStopLoss = (value: number, type: "buy" | "sell"): boolean => {
+    // Return true if stop loss is disabled
+    if (value === 0) return true;
+
+    const currentPriceForPair = currentPair ? pairPrices[currentPair] : 0;
+
+    if (type === "buy") {
+      // For buy/long positions, stop loss should be below entry price
+      return value < currentPriceForPair;
+    } else {
+      // For sell/short positions, stop loss should be above entry price
+      return value > currentPriceForPair;
+    }
+  };
+
+  const validateTakeProfit = (value: number, type: "buy" | "sell"): boolean => {
+    // Return true if take profit is disabled
+    if (value === 0) return true;
+
+    const currentPriceForPair = currentPair ? pairPrices[currentPair] : 0;
+
+    if (type === "buy") {
+      // For buy/long positions, take profit should be above entry price
+      return value > currentPriceForPair;
+    } else {
+      // For sell/short positions, take profit should be below entry price
+      return value < currentPriceForPair;
+    }
+  };
+
+  const handleStopLossChange = (value: number): void => {
+    // Always update the value first to enable user input
+    setTradeForm((prev) => ({ ...prev, stopLoss: value }));
+
+    // Skip validation if value is 0 (disabled)
+    if (value === 0) return;
+
+    // Only show warning notification if needed, but don't block input
+    const currentPriceForPair = currentPair ? pairPrices[currentPair] : 0;
+
+    if (currentTradeType === "buy" && value >= currentPriceForPair) {
+      notifications.show({
+        title: "Warning - Stop Loss",
+        message:
+          "For LONG positions, stop loss is typically set below the entry price",
+        color: "yellow",
+      });
+    } else if (currentTradeType === "sell" && value <= currentPriceForPair) {
+      notifications.show({
+        title: "Warning - Stop Loss",
+        message:
+          "For SHORT positions, stop loss is typically set above the entry price",
+        color: "yellow",
+      });
+    }
+  };
+
+  const handleTakeProfitChange = (value: number): void => {
+    // Always update the value first to enable user input
+    setTradeForm((prev) => ({ ...prev, takeProfit: value }));
+
+    // Skip validation if value is 0 (disabled)
+    if (value === 0) return;
+
+    // Only show warning notification if needed, but don't block input
+    const currentPriceForPair = currentPair ? pairPrices[currentPair] : 0;
+
+    if (currentTradeType === "buy" && value <= currentPriceForPair) {
+      notifications.show({
+        title: "Warning - Take Profit",
+        message:
+          "For LONG positions, take profit is typically set above the entry price",
+        color: "yellow",
+      });
+    } else if (currentTradeType === "sell" && value >= currentPriceForPair) {
+      notifications.show({
+        title: "Warning - Take Profit",
+        message:
+          "For SHORT positions, take profit is typically set below the entry price",
+        color: "yellow",
+      });
+    }
+  };
+
   const handleTrade = async (type: "buy" | "sell"): Promise<void> => {
     try {
       const token = localStorage.getItem("token");
       const positionSize = lotsToUnits(tradeForm.lotSize);
+      const currentPriceForPair = currentPair ? pairPrices[currentPair] : 0;
+
+      // Strict validation for stop loss and take profit
+      // If SL is set, it must be valid
+      if (
+        tradeForm.stopLoss !== 0 &&
+        !validateStopLoss(tradeForm.stopLoss, type)
+      ) {
+        notifications.show({
+          title: "Error",
+          message:
+            type === "buy"
+              ? "Stop Loss for LONG positions must be set below the entry price"
+              : "Stop Loss for SHORT positions must be set above the entry price",
+          color: "red",
+        });
+        return; // Prevent trade execution
+      }
+
+      // If TP is set, it must be valid
+      if (
+        tradeForm.takeProfit !== 0 &&
+        !validateTakeProfit(tradeForm.takeProfit, type)
+      ) {
+        notifications.show({
+          title: "Error",
+          message:
+            type === "buy"
+              ? "Take Profit for LONG positions must be set above the entry price"
+              : "Take Profit for SHORT positions must be set below the entry price",
+          color: "red",
+        });
+        return; // Prevent trade execution
+      }
 
       if (positionSize > balance) {
         notifications.show({
@@ -219,8 +347,6 @@ const ForexTradingPage = () => {
         });
         return;
       }
-
-      const currentPriceForPair = currentPair ? pairPrices[currentPair] : 0;
 
       const response = await axios.post(
         `${API_URL}/api/trading/trade`,
@@ -296,10 +422,100 @@ const ForexTradingPage = () => {
     }
   };
 
+  // Function to check for SL/TP hits and update positions
+  const checkPositionsForSLTP = async () => {
+    try {
+      // Only process if we have open trades
+      if (trades.filter((trade) => trade.status === "open").length === 0)
+        return;
+
+      const token = localStorage.getItem("token");
+      const openTrades = await axios.get(`${API_URL}/api/trading/trades/open`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      // For each open trade, check if SL or TP has been hit
+      for (const trade of openTrades.data) {
+        if (trade.status !== "open") continue;
+
+        const currentPriceForPair = pairPrices[trade.symbol] || 0;
+        if (currentPriceForPair === 0) continue;
+
+        // Check for stop loss hit
+        if (
+          trade.stopLoss &&
+          ((trade.type === "buy" && currentPriceForPair <= trade.stopLoss) ||
+            (trade.type === "sell" && currentPriceForPair >= trade.stopLoss))
+        ) {
+          await handleCloseTrade(trade._id);
+          notifications.show({
+            title: "Stop Loss Hit",
+            message: `Position ${
+              trade.symbol
+            } closed at stop loss price of ${formatPrice(trade.stopLoss)}`,
+            color: "red",
+            autoClose: 5000,
+          });
+          continue; // Skip to next trade
+        }
+
+        // Check for take profit hit
+        if (
+          trade.takeProfit &&
+          ((trade.type === "buy" && currentPriceForPair >= trade.takeProfit) ||
+            (trade.type === "sell" && currentPriceForPair <= trade.takeProfit))
+        ) {
+          await handleCloseTrade(trade._id);
+          notifications.show({
+            title: "Take Profit Hit",
+            message: `Position ${
+              trade.symbol
+            } closed at take profit price of ${formatPrice(trade.takeProfit)}`,
+            color: "green",
+            autoClose: 5000,
+          });
+        }
+      }
+
+      // Refresh trades list after checking
+      fetchTrades();
+    } catch (error) {
+      console.error("Error checking positions:", error);
+    }
+  };
+
+  // Set up initial data fetching and position checking interval
   useEffect(() => {
     fetchUserData();
     fetchTrades();
+
+    // Set up interval to refresh open positions and check for SL/TP hits
+    if (positionUpdateIntervalRef.current === null) {
+      positionUpdateIntervalRef.current = setInterval(() => {
+        fetchTrades();
+        checkPositionsForSLTP();
+      }, 10000); // Check every 10 seconds
+    }
+
+    // Clean up interval on component unmount
+    return () => {
+      if (positionUpdateIntervalRef.current) {
+        clearInterval(positionUpdateIntervalRef.current);
+        positionUpdateIntervalRef.current = null;
+      }
+    };
   }, []);
+
+  // Update positions check when prices change
+  useEffect(() => {
+    // Only run check if we have prices and trades
+    if (
+      Object.values(pairPrices).some((price) => price > 0) &&
+      trades.filter((trade) => trade.status === "open").length > 0
+    ) {
+      checkPositionsForSLTP();
+    }
+  }, [pairPrices]);
 
   return (
     <div className="bg-black text-white min-h-screen">
@@ -348,7 +564,6 @@ const ForexTradingPage = () => {
                       1.00 lot = $200 (100.00 = $20,000)
                     </Text>
                   </div>
-
                   <div className="space-y-1">
                     <Text className="text-cyan-400">
                       <span className="text-pink-500 font-bold">
@@ -357,56 +572,127 @@ const ForexTradingPage = () => {
                       {formatNumber(lotsToUnits(tradeForm.lotSize))} USD
                     </Text>
                   </div>
-
                   <div>
                     <Text className="text-pink-500 font-bold mb-1">
-                      STOP LOSS
+                      STOP LOSS{" "}
+                      {currentTradeType === "buy"
+                        ? "(LOWER PRICE)"
+                        : "(HIGHER PRICE)"}
                     </Text>
-                    <input
-                      type="number"
-                      className="w-full bg-black border border-cyan-500 rounded px-3 py-2 text-cyan-400"
-                      value={tradeForm.stopLoss}
-                      onChange={(e) =>
-                        setTradeForm((prev) => ({
-                          ...prev,
-                          stopLoss: Number(e.target.value) || 0,
-                        }))
-                      }
-                      min={0}
-                      step={0.00001}
-                    />
+                    <div className="relative">
+                      <input
+                        type="number"
+                        className="w-full bg-black border border-cyan-500 rounded px-3 py-2 text-cyan-400"
+                        value={tradeForm.stopLoss}
+                        onChange={(e) =>
+                          handleStopLossChange(Number(e.target.value) || 0)
+                        }
+                        min={0}
+                        step={0.00001}
+                      />
+                      <div className="absolute right-2 top-2">
+                        <span className="text-xs text-gray-400">
+                          {currentPair
+                            ? formatPrice(pairPrices[currentPair])
+                            : "0.00"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <Text className="text-xs text-gray-400">
+                        Set to 0 to disable
+                      </Text>
+                      <div className="flex gap-2">
+                        <button
+                          className="text-xs bg-pink-900/30 text-pink-400 border border-pink-500 px-2 py-1 rounded"
+                          onClick={() => {
+                            const currentPriceForPair = currentPair
+                              ? pairPrices[currentPair]
+                              : 0;
+                            const offset = currentPriceForPair * 0.01; // 1% offset
+                            const newValue =
+                              currentTradeType === "buy"
+                                ? currentPriceForPair - offset
+                                : currentPriceForPair + offset;
+                            handleStopLossChange(
+                              parseFloat(newValue.toFixed(5))
+                            );
+                          }}
+                        >
+                          Auto Set
+                        </button>
+                      </div>
+                    </div>
                   </div>
-
                   <div>
                     <Text className="text-pink-500 font-bold mb-1">
-                      TAKE PROFIT
+                      TAKE PROFIT{" "}
+                      {currentTradeType === "buy"
+                        ? "(HIGHER PRICE)"
+                        : "(LOWER PRICE)"}
                     </Text>
-                    <input
-                      type="number"
-                      className="w-full bg-black border border-cyan-500 rounded px-3 py-2 text-cyan-400"
-                      value={tradeForm.takeProfit}
-                      onChange={(e) =>
-                        setTradeForm((prev) => ({
-                          ...prev,
-                          takeProfit: Number(e.target.value) || 0,
-                        }))
-                      }
-                      min={0}
-                      step={0.00001}
-                    />
+                    <div className="relative">
+                      <input
+                        type="number"
+                        className="w-full bg-black border border-cyan-500 rounded px-3 py-2 text-cyan-400"
+                        value={tradeForm.takeProfit}
+                        onChange={(e) =>
+                          handleTakeProfitChange(Number(e.target.value) || 0)
+                        }
+                        min={0}
+                        step={0.00001}
+                      />
+                      <div className="absolute right-2 top-2">
+                        <span className="text-xs text-gray-400">
+                          {currentPair
+                            ? formatPrice(pairPrices[currentPair])
+                            : "0.00"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between mt-1">
+                      <Text className="text-xs text-gray-400">
+                        Set to 0 to disable
+                      </Text>
+                      <div className="flex gap-2">
+                        <button
+                          className="text-xs bg-cyan-900/30 text-cyan-400 border border-cyan-500 px-2 py-1 rounded"
+                          onClick={() => {
+                            const currentPriceForPair = currentPair
+                              ? pairPrices[currentPair]
+                              : 0;
+                            const offset = currentPriceForPair * 0.02; // 2% offset
+                            const newValue =
+                              currentTradeType === "buy"
+                                ? currentPriceForPair + offset
+                                : currentPriceForPair - offset;
+                            handleTakeProfitChange(
+                              parseFloat(newValue.toFixed(5))
+                            );
+                          }}
+                        >
+                          Auto Set
+                        </button>
+                      </div>
+                    </div>
                   </div>
-
                   <div className="grid grid-cols-2 gap-4 mt-4">
                     <button
                       className="bg-gradient-to-r from-cyan-900 to-cyan-600 text-white py-2 px-4 rounded border border-cyan-500 shadow-md shadow-cyan-500/20 hover:shadow-lg hover:shadow-cyan-500/40"
-                      onClick={() => handleTrade("buy")}
+                      onClick={() => {
+                        setCurrentTradeType("buy");
+                        handleTrade("buy");
+                      }}
                     >
                       LONG @ $
                       {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
                     </button>
                     <button
                       className="bg-gradient-to-r from-pink-900 to-pink-600 text-white py-2 px-4 rounded border border-pink-500 shadow-md shadow-pink-500/20 hover:shadow-lg hover:shadow-pink-500/40"
-                      onClick={() => handleTrade("sell")}
+                      onClick={() => {
+                        setCurrentTradeType("sell");
+                        handleTrade("sell");
+                      }}
                     >
                       SHORT @ $
                       {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
@@ -422,9 +708,17 @@ const ForexTradingPage = () => {
                 <select
                   className="w-full bg-black border border-pink-500 rounded px-3 py-2 text-cyan-400 mb-4"
                   value={currentPair}
-                  onChange={(e) =>
-                    e.target.value && setCurrentPair(e.target.value)
-                  }
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setCurrentPair(e.target.value);
+                      // Reset stop loss and take profit when changing pairs
+                      setTradeForm((prev) => ({
+                        ...prev,
+                        stopLoss: 0,
+                        takeProfit: 0,
+                      }));
+                    }
+                  }}
                 >
                   <option value="">SELECT PAIR</option>
                   <option value="FX:EURUSD">FX:EURUSD</option>
@@ -441,9 +735,26 @@ const ForexTradingPage = () => {
 
         {/* Open Positions Table */}
         <div className="mt-8 mb-8">
-          <Text className="text-3xl font-bold text-white mb-6">
-            OPEN POSITIONS
-          </Text>
+          <div className="flex justify-between items-center mb-6">
+            <Text className="text-3xl font-bold text-white">
+              OPEN POSITIONS
+            </Text>
+            <button
+              className="bg-gradient-to-r from-cyan-900 to-cyan-600 text-white py-1 px-3 rounded border border-cyan-500 shadow-md shadow-cyan-500/20 hover:shadow-lg hover:shadow-cyan-500/40"
+              onClick={() => {
+                fetchTrades();
+                checkPositionsForSLTP();
+                notifications.show({
+                  title: "Refreshed",
+                  message: "Positions updated",
+                  color: "blue",
+                  autoClose: 2000,
+                });
+              }}
+            >
+              Refresh Positions
+            </button>
+          </div>
           <div className="rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-2 shadow-lg shadow-cyan-500/20 overflow-x-auto">
             <table className="min-w-full">
               <thead>
@@ -453,6 +764,9 @@ const ForexTradingPage = () => {
                   <th className="px-4 py-3 text-left text-cyan-400">ENTRY</th>
                   <th className="px-4 py-3 text-left text-cyan-400">PNL</th>
                   <th className="px-4 py-3 text-left text-cyan-400">SL/TP</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">
+                    Liqudation
+                  </th>
                   <th className="px-4 py-3 text-left text-cyan-400">ACTION</th>
                 </tr>
               </thead>
@@ -488,7 +802,10 @@ const ForexTradingPage = () => {
                             : "text-pink-500"
                         }`}
                       >
-                        ${formatNumber(Math.abs(calculatePNL(trade)))}
+                        $
+                        {calculatePNL(trade) >= 0
+                          ? formatNumber(Math.abs(calculatePNL(trade)))
+                          : `-${formatNumber(Math.abs(calculatePNL(trade)))}`}
                       </td>
                       <td className="px-4 py-3 text-white">
                         <span className="text-pink-500 font-bold">SL:</span> $
@@ -496,6 +813,7 @@ const ForexTradingPage = () => {
                         <span className="text-cyan-400 font-bold"> TP:</span> $
                         {formatPrice(trade.takeProfit)}
                       </td>
+                      <td className="px-4 py-3">${trade.liquidationPrice}</td>
                       <td className="px-4 py-3">
                         <button
                           className="bg-pink-900/50 text-pink-400 border border-pink-500 p-1 rounded hover:bg-pink-800/50"
