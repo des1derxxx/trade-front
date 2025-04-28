@@ -95,6 +95,8 @@ const ProfilePage = () => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isManageModalOpen, setIsManageModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeactivationEnabled, setIsDeactivationEnabled] = useState(false);
+  const [isLoadingStatus, setIsLoadingStatus] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [accounts, setAccounts] = useState<UserData[]>([]);
@@ -108,6 +110,7 @@ const ProfilePage = () => {
   const [selectedUserTrades, setSelectedUserTrades] = useState<Trade[] | null>(
     null
   );
+  const [isDeleting, setIsDeleting] = useState(false);
   const [tradeStats, setTradeStats] = useState<TradeStatistics | null>(null);
   const [userPercent, setUserPercent] = useState<number | null>(null);
   const [userProfitPercentages, setUserProfitPercentages] = useState<{
@@ -230,6 +233,59 @@ const ProfilePage = () => {
     } catch (e) {
       console.error("Failed to parse JSON response:", text);
       throw new Error("Некорректный ответ от сервера");
+    }
+  };
+
+  useEffect(() => {
+    if (userData?.role === "admin") {
+      fetchDeactivationStatus();
+    }
+  }, [userData?.role]);
+
+  const fetchDeactivationStatus = async () => {
+    try {
+      setIsLoadingStatus(true);
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("Отсутствует токен авторизации");
+      }
+      const response = await axios.get(
+        `${API_URL}/api/trading/admin/deactivation/status`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      setIsDeactivationEnabled(response.data.enabled);
+    } catch (error) {
+      console.error("Failed to fetch status:", error);
+    } finally {
+      setIsLoadingStatus(false);
+    }
+  };
+
+  const handleToggleDeactivation = async (checked) => {
+    try {
+      const token = localStorage.getItem("token");
+      if (!token) {
+        throw new Error("Отсутствует токен авторизации");
+      }
+
+      const endpoint = checked
+        ? `${API_URL}/api/trading/admin/deactivation/enable`
+        : `${API_URL}/api/trading/admin/deactivation/disable`;
+
+      // This is the corrected part - headers should be a separate config option
+      const response = await axios.put(
+        endpoint,
+        {},
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      setIsDeactivationEnabled(response.data.enabled);
+    } catch (error) {
+      console.error("Failed to toggle deactivation:", error);
     }
   };
 
@@ -522,6 +578,32 @@ const ProfilePage = () => {
     }
   };
 
+  const handleDeleteAccount = async () => {
+    if (!selectedAccount) return;
+
+    const confirmDelete = window.confirm(
+      `Вы уверены, что хотите удалить аккаунт ${selectedAccount.username}?`
+    );
+
+    if (!confirmDelete) return;
+
+    try {
+      setIsDeleting(true);
+
+      // Ensure you're using the correct full URL or base axios configuration
+      await axios.delete(`${API_URL}/api/users/delete/${selectedAccount._id}`);
+
+      setIsEditModalOpen(false);
+
+      // Refresh users or remove deleted user from state
+      await fetchAccounts();
+    } catch (error) {
+      console.error("Ошибка при удалении аккаунта:", error);
+      // Handle error (show message to user, etc.)
+    } finally {
+      setIsDeleting(false);
+    }
+  };
   const handleUpdateAccount = async () => {
     if (!selectedAccount?._id) return;
 
@@ -673,6 +755,31 @@ const ProfilePage = () => {
                     <IconEye size={16} />
                     <span>Отслеживание пользователей</span>
                   </button>
+
+                  {/* Add the toggle switch */}
+                  <div className="mt-4 p-3 border border-cyan-400/30 rounded-lg">
+                    <Group fw="apart">
+                      <div className="flex items-center space-x-2">
+                        <IconUserPlus size={16} className="text-cyan-400" />
+                        <Text className="text-sm text-white">
+                          Автодеактивация аккаунтов
+                        </Text>
+                      </div>
+                      <Switch
+                        checked={isDeactivationEnabled}
+                        onChange={(event) =>
+                          handleToggleDeactivation(event.currentTarget.checked)
+                        }
+                        color="cyan"
+                        size="md"
+                        disabled={isLoadingStatus}
+                      />
+                    </Group>
+                    <Text className="text-xs text-gray-400 mt-2">
+                      Автоматически деактивирует пользователей при падении
+                      баланса ниже -10%
+                    </Text>
+                  </div>
                 </Stack>
               </div>
             </Grid.Col>
@@ -1272,6 +1379,12 @@ const ProfilePage = () => {
                 </label>
               </div>
 
+              <button
+                onClick={handleDeleteAccount}
+                className="px-4 py-2 rounded-lg border border-red-400/30 text-red-400 hover:text-red-500 hover:border-red-500/30 transition-all duration-300"
+              >
+                {isDeleting ? "Удаление..." : "Удалить аккаунт"}
+              </button>
               <div className="flex justify-end space-x-3 mt-6">
                 <button
                   onClick={() => setIsEditModalOpen(false)}

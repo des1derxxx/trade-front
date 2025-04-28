@@ -91,10 +91,10 @@ const TradeHistoryPage = () => {
   };
 
   return (
-    <div className="bg-black text-white min-h-screen">
+    <div className="bg-black text-white min-h-screen flex flex-col justify-between">
       {/* User Info Card */}
       {userData ? (
-        <div className="mx-8 mt-6 rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-6 shadow-lg shadow-cyan-500/20">
+        <div className="mx-8 mt-8 rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-6 shadow-lg shadow-cyan-500/20">
           <Group className="flex justify-between">
             <Text className="text-xl text-white font-bold"></Text>
             <Badge className="bg-gradient-to-r from-pink-600 to-cyan-600 text-white px-3 py-1 rounded">
@@ -192,10 +192,10 @@ const TradeHistoryPage = () => {
                     </td>
                     <td className="px-4 py-3 text-white">{trade.amount}</td>
                     <td className="px-4 py-3 text-white">
-                      ${trade.entryPrice.toFixed(2)}
+                      ${trade.entryPrice.toFixed(5)}
                     </td>
                     <td className="px-4 py-3 text-white">
-                      {trade.exitPrice ? `$${trade.exitPrice.toFixed(2)}` : "-"}
+                      {trade.exitPrice ? `$${trade.exitPrice.toFixed(5)}` : "-"}
                     </td>
                     <td
                       className={`px-4 py-3 ${

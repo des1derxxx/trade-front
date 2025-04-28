@@ -14,12 +14,14 @@ import {
   Stack,
   Grid,
   Card,
+  Modal,
 } from "@mantine/core";
+import { X, Pencil } from "lucide-react";
 import { notifications } from "@mantine/notifications";
 import axios from "axios";
-import { X } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 import TradingViewChart from "../components/TradingViewChart";
+import TechnicalAnalysisWidget from "../components/TechnicalAnalysisWidget";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3000";
 const FOREX_API_URL = "https://api.twelvedata.com";
@@ -80,8 +82,18 @@ const ForexTradingPage = () => {
     "FX:USDCHF": 0,
     "TVC:GOLD": 0,
   });
+  const [pricesLoaded, setPricesLoaded] = useState(false);
+  const [isOpen, setIsOpen] = useState(false); // Состояние открытия/закрытия
   const [trades, setTrades] = useState<Trade[]>([]);
   const [balance, setBalance] = useState<number>(10000);
+  const [editingSLTP, setEditingSLTP] = useState(false);
+  const [currentTradeId, setCurrentTradeId] = useState(null);
+  const [slTPForm, setSLTPForm] = useState({
+    stopLoss: 0,
+    takeProfit: 0,
+    symbol: "",
+    type: "buy",
+  });
   const [tradeForm, setTradeForm] = useState<TradeFormData>({
     symbol: "EURUSD",
     type: "buy",
@@ -111,6 +123,11 @@ const ForexTradingPage = () => {
 
       setPairPrices(priceMap);
 
+      // If any price is valid, mark prices as loaded
+      if (Object.values(priceMap).some((price) => price > 0)) {
+        setPricesLoaded(true);
+      }
+
       // Обновляем форму только для текущей выбранной пары
       if (currentPair && priceMap[currentPair]) {
         setTradeForm((prev) => ({
@@ -120,7 +137,19 @@ const ForexTradingPage = () => {
       }
     });
 
+    const timeoutId = setTimeout(() => {
+      if (!pricesLoaded) {
+        notifications.show({
+          title: "Warning",
+          message:
+            "Prices taking longer than expected to load. Please check your connection.",
+          color: "yellow",
+        });
+      }
+    }, 10000); // 10 seconds timeout
+
     return () => {
+      clearTimeout(timeoutId);
       newSocket.disconnect();
     };
   }, [currentPair]);
@@ -140,9 +169,18 @@ const ForexTradingPage = () => {
   };
 
   // Helper function to convert lots to units with проверкой
-  const lotsToUnits = (lots: number): number => {
+  const lotsToUnits = (lots: number, symbol: string = "FX:EURUSD"): number => {
     if (!lots) return 0;
-    return lots * 200; // 1 lot = $200 (100 lots = $20,000)
+
+    // Базовое значение для стандартных пар
+    let lotFactor = 200.0;
+
+    // Специфические настройки для разных инструментов
+    if (symbol === "TVC:GOLD") {
+      lotFactor = 200.0; // Для золота можно установить другой коэффициент
+    }
+
+    return lots * lotFactor;
   };
 
   const fetchUserData = async (): Promise<void> => {
@@ -175,6 +213,139 @@ const ForexTradingPage = () => {
     }
   };
 
+  const handleEditSLTP = (trade) => {
+    setCurrentTradeId(trade);
+    const selectedTrade = trades.find((t) => t._id === trade);
+
+    if (selectedTrade) {
+      setSLTPForm({
+        stopLoss: selectedTrade.stopLoss || 0,
+        takeProfit: selectedTrade.takeProfit || 0,
+        symbol: selectedTrade.symbol,
+        type: selectedTrade.type,
+      });
+      setEditingSLTP(true);
+    }
+  };
+
+  const validateSLTPEdits = () => {
+    const selectedTrade = trades.find((t) => t._id === currentTradeId);
+    if (!selectedTrade) return false;
+
+    const currentPriceForPair = pairPrices[selectedTrade.symbol] || 0;
+
+    // Validate Stop Loss if set
+    if (slTPForm.stopLoss !== 0) {
+      if (
+        selectedTrade.type === "buy" &&
+        slTPForm.stopLoss >= currentPriceForPair
+      ) {
+        notifications.show({
+          title: "Error",
+          message:
+            "Stop Loss for LONG positions must be set below the current price",
+          color: "red",
+        });
+        return false;
+      }
+      if (
+        selectedTrade.type === "sell" &&
+        slTPForm.stopLoss <= currentPriceForPair
+      ) {
+        notifications.show({
+          title: "Error",
+          message:
+            "Stop Loss for SHORT positions must be set above the current price",
+          color: "red",
+        });
+        return false;
+      }
+    }
+
+    // Validate Take Profit if set
+    if (slTPForm.takeProfit !== 0) {
+      if (
+        selectedTrade.type === "buy" &&
+        slTPForm.takeProfit <= currentPriceForPair
+      ) {
+        notifications.show({
+          title: "Error",
+          message:
+            "Take Profit for LONG positions must be set above the current price",
+          color: "red",
+        });
+        return false;
+      }
+      if (
+        selectedTrade.type === "sell" &&
+        slTPForm.takeProfit >= currentPriceForPair
+      ) {
+        notifications.show({
+          title: "Error",
+          message:
+            "Take Profit for SHORT positions must be set below the current price",
+          color: "red",
+        });
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const saveSLTPChanges = async () => {
+    try {
+      if (!validateSLTPEdits()) return;
+
+      const token = localStorage.getItem("token");
+      await axios.put(
+        `${API_URL}/api/trading/trades/${currentTradeId}/sl-tp`,
+        {
+          stopLoss: slTPForm.stopLoss,
+          takeProfit: slTPForm.takeProfit,
+        },
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      notifications.show({
+        title: "Success",
+        message: "Stop Loss and Take Profit updated successfully",
+        color: "green",
+        autoClose: 3000,
+      });
+
+      setEditingSLTP(false);
+      fetchTrades();
+    } catch (error) {
+      console.error("Error updating SL/TP:", error);
+      notifications.show({
+        title: "Error",
+        message: "Failed to update Stop Loss and Take Profit",
+        color: "red",
+        autoClose: 3000,
+      });
+    }
+  };
+
+  // Add these helper functions to improve UX
+  const getMarketPrice = (symbol) => {
+    return pairPrices[symbol] || 0;
+  };
+
+  const getStopLossLabel = (type) => {
+    return type === "buy"
+      ? "Stop Loss (set below current price)"
+      : "Stop Loss (set above current price)";
+  };
+
+  const getTakeProfitLabel = (type) => {
+    return type === "buy"
+      ? "Take Profit (set above current price)"
+      : "Take Profit (set below current price)";
+  };
+
   const fetchTrades = async (): Promise<void> => {
     try {
       const token = localStorage.getItem("token");
@@ -195,26 +366,57 @@ const ForexTradingPage = () => {
   };
 
   const calculatePNL = (trade: Trade): number => {
-    if (!trade || !trade.entryPrice || !trade.amount) {
+    if (!trade || !trade.entryPrice || !trade.lotSize) {
       return 0;
     }
 
-    // Получаем текущую цену для конкретной пары из trade.symbol
+    // Get current price for the specific trading pair
     const currentPriceForPair = pairPrices[trade.symbol] || 0;
-
     if (currentPriceForPair === 0) return 0;
 
+    // Define pip values and multipliers based on instrument type
+    const pipSettings = {
+      "FX:EURUSD": { pipDecimalPlace: 4, pipValue: 10, lotSize: 200 },
+      "FX:USDCHF": { pipDecimalPlace: 4, pipValue: 10, lotSize: 200 },
+      "TVC:GOLD": { pipDecimalPlace: 2, pipValue: 0.1, lotSize: 100 },
+    };
+
+    // Get settings for current instrument or use default forex settings
+    const settings = pipSettings[trade.symbol] || {
+      pipDecimalPlace: 4,
+      pipValue: 10,
+      lotSize: 200,
+    };
+
+    // Calculate pip size (e.g., 0.0001 for 4 decimal place currencies)
+    const pipSize = Math.pow(10, -settings.pipDecimalPlace);
+
+    // Calculate price difference in terms of pips
     const priceDifference =
-      trade.type === "sell"
-        ? trade.entryPrice - currentPriceForPair
-        : currentPriceForPair - trade.entryPrice;
+      trade.type === "buy"
+        ? currentPriceForPair - trade.entryPrice
+        : trade.entryPrice - currentPriceForPair;
 
-    const units = trade.amount * 200.0;
-    const pnl = priceDifference * units;
+    const pipsCount = priceDifference / pipSize;
 
+    // Calculate standard lot value (1.0 lot = 100,000 units for most forex pairs)
+    const standardLotValue = settings.lotSize * trade.lotSize;
+
+    // Calculate pip value in account currency
+    // For pairs where USD is the quote currency (like EUR/USD), pip value is fixed
+    // For other pairs, we'd need to adjust based on the current exchange rate to USD
+    let pipValueInUSD = settings.pipValue * trade.lotSize;
+
+    // Calculate final PNL
+    const pnl = pipsCount * pipValueInUSD;
+
+    // Account for leverage if applicable
+    // const leverageMultiplier = trade.leverage || 1;
+    // const pnlWithLeverage = pnl * leverageMultiplier;
+
+    // Round to 2 decimal places for display
     return parseFloat(pnl.toFixed(2));
   };
-
   // Validation for stop loss and take profit based on trade type
   const validateStopLoss = (value: number, type: "buy" | "sell"): boolean => {
     // Return true if stop loss is disabled
@@ -391,9 +593,11 @@ const ForexTradingPage = () => {
         return;
       }
 
-      // Используем цену конкретной пары при закрытии трейда
-      const currentPriceForPair = pairPrices[selectedTrade.symbol] || 0;
+      // Используем обновленный расчет PNL
       const pnl = calculatePNL(selectedTrade);
+
+      // Получаем текущую цену для пары
+      const currentPriceForPair = pairPrices[selectedTrade.symbol] || 0;
 
       await axios.post(
         `${API_URL}/api/trading/trade/${trade}/close`,
@@ -421,7 +625,6 @@ const ForexTradingPage = () => {
       });
     }
   };
-
   // Function to check for SL/TP hits and update positions
   const checkPositionsForSLTP = async () => {
     try {
@@ -517,8 +720,39 @@ const ForexTradingPage = () => {
     }
   }, [pairPrices]);
 
+  if (!pricesLoaded) {
+    return (
+      <div className="bg-black text-white min-h-screen flex flex-col justify-between">
+        <div className="mx-8 pt-6">
+          <div className="rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-6 shadow-lg shadow-cyan-500/20">
+            <div className="flex justify-between mb-8">
+              <Text className="text-3xl font-bold text-white">
+                FOREX TRADING
+              </Text>
+              <Badge className="bg-gradient-to-r from-pink-600 to-cyan-600 text-white px-3 py-1 rounded">
+                DEMO
+              </Badge>
+            </div>
+
+            <div className="flex flex-col items-center justify-center py-16">
+              <div className="mb-4">
+                <div className="w-16 h-16 border-4 border-t-cyan-500 border-r-transparent border-b-purple-500 border-l-transparent rounded-full animate-spin"></div>
+              </div>
+              <Text className="text-xl font-medium text-cyan-400 mb-2">
+                Loading Trading Platform
+              </Text>
+              <Text className="text-gray-400">
+                Connecting to market data...
+              </Text>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-black text-white min-h-screen">
+    <div className="bg-black text-white min-h-screen flex flex-col justify-between">
       <div className="mx-8 pt-6">
         <div className="rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-6 shadow-lg shadow-cyan-500/20">
           <div className="flex justify-between">
@@ -531,10 +765,10 @@ const ForexTradingPage = () => {
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 mt-6">
             {/* Left Column - Trading Controls */}
             <div className="lg:col-span-4">
-              <div className="rounded-lg border border-pink-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-4 mb-6 shadow-lg shadow-pink-500/20">
-                <Text className="text-xl text-cyan-400">
-                  <span className="text-pink-500 font-bold">DEMO BALANCE:</span>{" "}
-                  ${balance}
+              <div className="rounded-lg border border-green-500 bg-gradient-to-r from-green-500/20 to-cyan-500/20 p-4 mb-6 shadow-lg shadow-green-500/20">
+                <Text className="text-xl text-green-400">
+                  <span className="text-green-500 font-bold">BALANCE: </span> $
+                  {balance}
                 </Text>
               </div>
 
@@ -566,7 +800,7 @@ const ForexTradingPage = () => {
                   </div>
                   <div className="space-y-1">
                     <Text className="text-cyan-400">
-                      <span className="text-pink-500 font-bold">
+                      <span className="text-cyan-500 font-bold">
                         POSITION SIZE:
                       </span>{" "}
                       {formatNumber(lotsToUnits(tradeForm.lotSize))} USD
@@ -590,7 +824,7 @@ const ForexTradingPage = () => {
                         min={0}
                         step={0.00001}
                       />
-                      <div className="absolute right-2 top-2">
+                      <div className="absolute right-8 top-2">
                         <span className="text-xs text-gray-400">
                           {currentPair
                             ? formatPrice(pairPrices[currentPair])
@@ -604,28 +838,40 @@ const ForexTradingPage = () => {
                       </Text>
                       <div className="flex gap-2">
                         <button
-                          className="text-xs bg-pink-900/30 text-pink-400 border border-pink-500 px-2 py-1 rounded"
+                          className="text-xs bg-green-900/30 text-green-400 border border-green-500 px-2 py-1 rounded"
                           onClick={() => {
                             const currentPriceForPair = currentPair
                               ? pairPrices[currentPair]
                               : 0;
-                            const offset = currentPriceForPair * 0.01; // 1% offset
-                            const newValue =
-                              currentTradeType === "buy"
-                                ? currentPriceForPair - offset
-                                : currentPriceForPair + offset;
+                            const offset = currentPriceForPair * 0.001; // 1% offset
+                            const newValue = currentPriceForPair - offset;
                             handleStopLossChange(
                               parseFloat(newValue.toFixed(5))
                             );
                           }}
                         >
-                          Auto Set
+                          Auto Set Long
+                        </button>
+                        <button
+                          className="text-xs bg-pink-900/30 text-pink-400 border border-pink-500 px-2 py-1 rounded"
+                          onClick={() => {
+                            const currentPriceForPair = currentPair
+                              ? pairPrices[currentPair]
+                              : 0;
+                            const offset = currentPriceForPair * 0.001; // 1% offset
+                            const newValue = currentPriceForPair + offset;
+                            handleStopLossChange(
+                              parseFloat(newValue.toFixed(5))
+                            );
+                          }}
+                        >
+                          Auto Set Short
                         </button>
                       </div>
                     </div>
                   </div>
                   <div>
-                    <Text className="text-pink-500 font-bold mb-1">
+                    <Text className="text-cyan-400 font-bold mb-1">
                       TAKE PROFIT{" "}
                       {currentTradeType === "buy"
                         ? "(HIGHER PRICE)"
@@ -642,7 +888,7 @@ const ForexTradingPage = () => {
                         min={0}
                         step={0.00001}
                       />
-                      <div className="absolute right-2 top-2">
+                      <div className="absolute right-8 top-2">
                         <span className="text-xs text-gray-400">
                           {currentPair
                             ? formatPrice(pairPrices[currentPair])
@@ -656,22 +902,34 @@ const ForexTradingPage = () => {
                       </Text>
                       <div className="flex gap-2">
                         <button
-                          className="text-xs bg-cyan-900/30 text-cyan-400 border border-cyan-500 px-2 py-1 rounded"
+                          className="text-xs bg-green-900/30 text-green-400 border border-green-500 px-2 py-1 rounded"
                           onClick={() => {
                             const currentPriceForPair = currentPair
                               ? pairPrices[currentPair]
                               : 0;
-                            const offset = currentPriceForPair * 0.02; // 2% offset
-                            const newValue =
-                              currentTradeType === "buy"
-                                ? currentPriceForPair + offset
-                                : currentPriceForPair - offset;
+                            const offset = currentPriceForPair * 0.002; // 2% offset
+                            const newValue = currentPriceForPair + offset;
                             handleTakeProfitChange(
                               parseFloat(newValue.toFixed(5))
                             );
                           }}
                         >
-                          Auto Set
+                          Auto Set Long
+                        </button>
+                        <button
+                          className="text-xs bg-pink-900/30 text-pink-400 border border-pink-500 px-2 py-1 rounded"
+                          onClick={() => {
+                            const currentPriceForPair = currentPair
+                              ? pairPrices[currentPair]
+                              : 0;
+                            const offset = currentPriceForPair * 0.002; // 2% offset
+                            const newValue = currentPriceForPair - offset;
+                            handleTakeProfitChange(
+                              parseFloat(newValue.toFixed(5))
+                            );
+                          }}
+                        >
+                          Auto Set Short
                         </button>
                       </div>
                     </div>
@@ -698,6 +956,20 @@ const ForexTradingPage = () => {
                       {formatPrice(currentPair ? pairPrices[currentPair] : 0)}
                     </button>
                   </div>
+                </div>
+                <div className="pt-10">
+                  <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="px-4 py-2 bg-blue-500 text-white rounded"
+                  >
+                    {isOpen ? "Закрыть виджет" : "Открыть виджет"}
+                  </button>
+
+                  {isOpen && (
+                    <div className="mt-4">
+                      <TechnicalAnalysisWidget symbol={currentPair} />
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -732,9 +1004,8 @@ const ForexTradingPage = () => {
             </div>
           </div>
         </div>
-
         {/* Open Positions Table */}
-        <div className="mt-8 mb-8">
+        <div className="mt-8 mb-5">
           <div className="flex justify-between items-center mb-6">
             <Text className="text-3xl font-bold text-white">
               OPEN POSITIONS
@@ -760,8 +1031,10 @@ const ForexTradingPage = () => {
               <thead>
                 <tr className="border-b border-cyan-500/30">
                   <th className="px-4 py-3 text-left text-cyan-400">TYPE</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">PAIR</th>
                   <th className="px-4 py-3 text-left text-cyan-400">SIZE</th>
                   <th className="px-4 py-3 text-left text-cyan-400">ENTRY</th>
+                  <th className="px-4 py-3 text-left text-cyan-400">CURRENT</th>
                   <th className="px-4 py-3 text-left text-cyan-400">PNL</th>
                   <th className="px-4 py-3 text-left text-cyan-400">SL/TP</th>
                   <th className="px-4 py-3 text-left text-cyan-400">
@@ -789,11 +1062,18 @@ const ForexTradingPage = () => {
                           </Badge>
                         )}
                       </td>
+                      <td className="px-4 py-3">{trade.symbol}</td>
                       <td className="px-4 py-3 text-white">
                         {formatNumber(trade.lotSize)}
                       </td>
                       <td className="px-4 py-3 text-white">
                         ${formatPrice(trade.entryPrice)}
+                      </td>
+                      <td className="px-4 py-3 text-white">
+                        $
+                        {formatPrice(
+                          trade.symbol ? pairPrices[trade.symbol] : 0
+                        )}
                       </td>
                       <td
                         className={`px-4 py-3 ${
@@ -807,19 +1087,25 @@ const ForexTradingPage = () => {
                           ? formatNumber(Math.abs(calculatePNL(trade)))
                           : `-${formatNumber(Math.abs(calculatePNL(trade)))}`}
                       </td>
-                      <td className="px-4 py-3 text-white">
-                        <span className="text-pink-500 font-bold">SL:</span> $
-                        {formatPrice(trade.stopLoss)} /
-                        <span className="text-cyan-400 font-bold"> TP:</span> $
-                        {formatPrice(trade.takeProfit)}
+                      <td className="px-4 py-3 text-white flex items-center space-x-2">
+                        <div>
+                          <span className="text-pink-500 font-bold">SL:</span> $
+                          {formatPrice(trade.stopLoss)} /
+                          <span className="text-cyan-400 font-bold"> TP:</span>{" "}
+                          ${formatPrice(trade.takeProfit)}
+                        </div>
+                        <button
+                          className="bg-yellow-900/50 text-yellow-400 border border-yellow-500 p-1 rounded hover:bg-yellow-800/50"
+                          onClick={() => handleEditSLTP(trade._id)}
+                        >
+                          <Pencil size={16} />
+                        </button>
                       </td>
                       <td className="px-4 py-3">${trade.liquidationPrice}</td>
                       <td className="px-4 py-3">
                         <button
                           className="bg-pink-900/50 text-pink-400 border border-pink-500 p-1 rounded hover:bg-pink-800/50"
-                          onClick={() =>
-                            trade._id && handleCloseTrade(trade._id)
-                          }
+                          onClick={() => handleCloseTrade(trade._id)}
                           disabled={!trade._id}
                         >
                           <X size={16} />
@@ -830,7 +1116,82 @@ const ForexTradingPage = () => {
               </tbody>
             </table>
           </div>
-        </div>
+        </div>{" "}
+        <Modal
+          opened={editingSLTP}
+          onClose={() => setEditingSLTP(false)}
+          title={
+            <Text className="text-cyan-400 font-bold">
+              Edit Stop Loss and Take Profit
+            </Text>
+          }
+          classNames={{
+            content: "bg-gray-900 border border-cyan-500",
+            title: "text-cyan-400 font-bold",
+          }}
+        >
+          <div className="space-y-4">
+            {/* Display current market price */}
+            {currentTradeId && (
+              <div className="flex justify-between mb-4">
+                <Text className="text-white">Current Market Price:</Text>
+                <Text className="text-white font-bold">
+                  ${formatPrice(getMarketPrice(slTPForm.symbol))}
+                </Text>
+              </div>
+            )}
+
+            <NumberInput
+              label={
+                <span className="text-pink-500 font-bold">
+                  {getStopLossLabel(slTPForm.type)}
+                </span>
+              }
+              value={slTPForm.stopLoss}
+              onChange={(value) =>
+                setSLTPForm((prev) => ({
+                  ...prev,
+                  stopLoss: parseFloat(value),
+                }))
+              }
+              precision={5}
+              step={0.00001}
+              className="mb-3"
+            />
+
+            <NumberInput
+              label={
+                <span className="text-cyan-400 font-bold">
+                  {getTakeProfitLabel(slTPForm.type)}
+                </span>
+              }
+              value={slTPForm.takeProfit}
+              onChange={(value) =>
+                setSLTPForm((prev) => ({
+                  ...prev,
+                  takeProfit: parseFloat(value),
+                }))
+              }
+              precision={5}
+              step={0.00001}
+            />
+
+            <Group position="right" className="mt-6">
+              <Button
+                className="bg-pink-900 text-pink-400 border border-pink-500 hover:bg-pink-800"
+                onClick={() => setEditingSLTP(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                className="bg-cyan-900 text-cyan-400 border border-cyan-500 hover:bg-cyan-800"
+                onClick={saveSLTPChanges}
+              >
+                Save Changes
+              </Button>
+            </Group>
+          </div>
+        </Modal>
       </div>
     </div>
   );

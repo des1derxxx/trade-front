@@ -13,12 +13,11 @@ interface TradingViewChartProps {
 
 const TradingViewChart = ({ ticket }: TradingViewChartProps) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const scriptRef = useRef<HTMLScriptElement | null>(null); // Ссылаемся на скрипт
+  const scriptRef = useRef<HTMLScriptElement | null>(null);
 
   useEffect(() => {
     if (!containerRef.current || !ticket) return;
 
-    // Если скрипт уже был добавлен, не добавляем его снова
     if (!scriptRef.current) {
       const script = document.createElement("script");
       script.src = "https://s3.tradingview.com/tv.js";
@@ -37,7 +36,8 @@ const TradingViewChart = ({ ticket }: TradingViewChartProps) => {
             enable_publishing: false,
             hide_top_toolbar: false,
             hide_side_toolbar: false,
-            allow_symbol_change: true,
+            allow_symbol_change: false, // Отключаем возможность менять символ
+            studies: ["STD;BBP", "STD;RSI"],
           });
         }
       };
@@ -47,15 +47,14 @@ const TradingViewChart = ({ ticket }: TradingViewChartProps) => {
     }
 
     return () => {
-      // Убедимся, что скрипт существует перед удалением
       if (scriptRef.current && containerRef.current) {
         if (containerRef.current.contains(scriptRef.current)) {
           containerRef.current.removeChild(scriptRef.current);
         }
-        scriptRef.current = null; // Очистим ссылку на скрипт
+        scriptRef.current = null;
       }
     };
-  }, [ticket]); // Зависимость от тикера
+  }, [ticket]);
 
   return (
     <div

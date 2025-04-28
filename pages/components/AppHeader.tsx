@@ -132,7 +132,7 @@ const AppHeader = () => {
             </Menu.Dropdown>
           </Menu>
 
-          <Button
+          {/* <Button
             variant="outline"
             styles={{
               root: {
@@ -154,7 +154,7 @@ const AppHeader = () => {
             onClick={handleLogout}
           >
             LOGOUT
-          </Button>
+          </Button> */}
         </Group>
       </Group>
 
