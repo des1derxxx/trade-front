@@ -1,15 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import {
-  Container,
-  Title,
-  Table,
-  Card,
-  Text,
-  Group,
-  Badge,
-  Loader,
-} from "@mantine/core";
+import { Loader } from "@mantine/core";
 import axios from "axios";
 
 interface User {
@@ -71,7 +62,7 @@ const TradeHistoryPage = () => {
       );
       setUserData(response.data);
     } catch (error) {
-      console.error("Ошибка при загрузке данных пользователя", error);
+      console.error("Error loading user data", error);
     }
   };
 
@@ -83,159 +74,137 @@ const TradeHistoryPage = () => {
           headers: { Authorization: `Bearer ${token}` },
         }
       );
-
       setUserTrades(response.data);
     } catch (error) {
-      console.error("Ошибка при загрузке истории трейдинга", error);
+      console.error("Error loading trade history", error);
     }
   };
 
   return (
-    <div className="bg-black text-white min-h-screen flex flex-col justify-between">
-      {/* User Info Card */}
-      {userData ? (
-        <div className="mx-8 mt-8 rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-6 shadow-lg shadow-cyan-500/20">
-          <Group className="flex justify-between">
-            <Text className="text-xl text-white font-bold"></Text>
-            <Badge className="bg-gradient-to-r from-pink-600 to-cyan-600 text-white px-3 py-1 rounded">
-              GROUP {userData.group}
-            </Badge>
-          </Group>
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <Text className="text-cyan-400">
-              <span className="text-pink-500 font-bold">USER:</span>{" "}
-              {userData.username}
-            </Text>
-            <Text className="text-cyan-400">
-              <span className="text-pink-500 font-bold">BALANCE:</span> $
-              {userData.demoBalance.toFixed(2)}
-            </Text>
-          </div>
-          <div className="mt-6"></div>
-        </div>
-      ) : (
-        <Loader className="text-cyan-500 mx-auto mt-8" size="lg" />
-      )}
-
-      {/* Feature Icons */}
-      <div className="flex justify-center gap-8 my-12">
-        {[
-          // "ANALYTICS",
-          // "HISTORY",
-          // "STRATEGY",
-          // "PLANNING",
-          // "MARKETS",
-          // "REPORTS",
-          // "OPTIONS",
-          // "SETTINGS",
-        ].map((item, index) => (
-          <div key={index} className="flex flex-col items-center">
-            <div
-              className={`w-12 h-12 rounded-full flex items-center justify-center ${
-                index % 2 === 0
-                  ? "border border-cyan-500 text-cyan-500"
-                  : "border border-pink-500 text-pink-500"
-              }`}
-            >
-              <span>{item.charAt(0)}</span>
+    <div className="bg-gray-900 text-gray-100 min-h-screen">
+      {/* Header */}
+      <header className="border-b border-gray-700 py-6 px-8">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-light tracking-widest">TRADE HISTORY</h1>
+          {userData && (
+            <div className="flex items-center space-x-4">
+              <div className="text-right">
+                <div className="text-xs text-gray-400">ACCOUNT</div>
+                <div className="font-mono">{userData.username}</div>
+              </div>
+              <div className="h-8 w-px bg-gray-700"></div>
+              <div className="text-right">
+                <div className="text-xs text-gray-400">BALANCE</div>
+                <div className="font-mono">
+                  ${userData.demoBalance.toFixed(2)}
+                </div>
+              </div>
+              <div className="h-8 w-px bg-gray-700"></div>
+              <div className="text-right">
+                <div className="text-xs text-gray-400">GROUP</div>
+                <div className="font-mono">{userData.group}</div>
+              </div>
             </div>
-            <Text className="text-xs mt-2 text-gray-400">{item}</Text>
-          </div>
-        ))}
-      </div>
+          )}
+        </div>
+      </header>
 
-      {/* PROJECTS Section */}
-      <div className="flex justify-between mx-8 mb-6">
-        <Text className="text-3xl font-bold text-white">TRADES</Text>
-      </div>
+      {/* Main Content */}
+      <main className="px-8 py-6">
+        {userTrades ? (
+          <div className="overflow-hidden rounded-lg border border-gray-700">
+            <div className="grid grid-cols-9 bg-gray-800 text-xs font-medium text-gray-400 uppercase tracking-wider">
+              <div className="p-3">SYMBOL</div>
+              <div className="p-3">TYPE</div>
+              <div className="p-3">AMOUNT</div>
+              <div className="p-3">ENTRY</div>
+              <div className="p-3">EXIT</div>
+              <div className="p-3">PROFIT</div>
+              <div className="p-3">STATUS</div>
+              <div className="p-3">OPENED</div>
+              <div className="p-3">CLOSED</div>
+            </div>
 
-      {/* Trade History Table */}
-      {userTrades ? (
-        <div className="mx-8 overflow-x-auto rounded-lg border border-cyan-500 bg-gradient-to-r from-purple-900/20 to-cyan-900/20 p-2 shadow-lg shadow-cyan-500/20">
-          <table className="min-w-full">
-            <thead>
-              <tr className="border-b border-cyan-500/30">
-                <th className="px-4 py-3 text-left text-cyan-400">SYMBOL</th>
-                <th className="px-4 py-3 text-left text-cyan-400">TYPE</th>
-                <th className="px-4 py-3 text-left text-cyan-400">AMOUNT</th>
-                <th className="px-4 py-3 text-left text-cyan-400">ENTRY</th>
-                <th className="px-4 py-3 text-left text-cyan-400">EXIT</th>
-                <th className="px-4 py-3 text-left text-cyan-400">PROFIT</th>
-                <th className="px-4 py-3 text-left text-cyan-400">STATUS</th>
-                <th className="px-4 py-3 text-left text-cyan-400">OPENED</th>
-                <th className="px-4 py-3 text-left text-cyan-400">CLOSED</th>
-              </tr>
-            </thead>
-            <tbody>
+            <div className="divide-y divide-gray-800">
               {userTrades.map((trade) => {
                 const profitPercentage = trade.profit
-                  ? (
-                      (trade.profit / (trade.entryPrice * trade.amount)) *
-                      100
-                    ).toFixed(2)
-                  : "0.00";
+                  ? (trade.profit / (trade.entryPrice * trade.amount)) * 100
+                  : 0;
 
                 return (
-                  <tr
+                  <div
                     key={trade._id}
-                    className="border-b border-cyan-500/10 hover:bg-cyan-900/20"
+                    className="grid grid-cols-9 hover:bg-gray-800/50 transition-colors"
                   >
-                    <td className="px-4 py-3 text-pink-400 font-bold">
+                    <div className="p-3 font-mono text-blue-400">
                       {trade.symbol}
-                    </td>
-                    <td className="px-4 py-3 text-white">
+                    </div>
+                    <div className="p-3">
                       {trade.type === "buy" ? (
-                        <span className="text-cyan-400">LONG</span>
+                        <span className="text-green-400">LONG</span>
                       ) : (
-                        <span className="text-pink-500">SHORT</span>
+                        <span className="text-red-400">SHORT</span>
                       )}
-                    </td>
-                    <td className="px-4 py-3 text-white">{trade.amount}</td>
-                    <td className="px-4 py-3 text-white">
+                    </div>
+                    <div className="p-3 font-mono">{trade.amount}</div>
+                    <div className="p-3 font-mono">
                       ${trade.entryPrice.toFixed(5)}
-                    </td>
-                    <td className="px-4 py-3 text-white">
+                    </div>
+                    <div className="p-3 font-mono">
                       {trade.exitPrice ? `$${trade.exitPrice.toFixed(5)}` : "-"}
-                    </td>
-                    <td
-                      className={`px-4 py-3 ${
+                    </div>
+                    <div
+                      className={`p-3 font-mono ${
                         trade.profit && trade.profit >= 0
-                          ? "text-cyan-400"
-                          : "text-pink-500"
+                          ? "text-green-400"
+                          : "text-red-400"
                       }`}
                     >
                       {trade.profit
-                        ? `$${trade.profit.toFixed(2)} (${profitPercentage}%)`
+                        ? `$${trade.profit.toFixed(
+                            2
+                          )} (${profitPercentage.toFixed(2)}%)`
                         : "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <Badge
-                        className={`px-2 py-1 rounded ${
+                    </div>
+                    <div className="p-3">
+                      <span
+                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           trade.status === "closed"
-                            ? "bg-cyan-900/50 text-cyan-400 border border-cyan-500"
-                            : "bg-pink-900/50 text-pink-400 border border-pink-500"
+                            ? "bg-green-900/20 text-green-400"
+                            : "bg-blue-900/20 text-blue-400"
                         }`}
                       >
                         {trade.status === "closed" ? "CLOSED" : "ACTIVE"}
-                      </Badge>
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
-                      {new Date(trade.createdAt).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-gray-400">
+                      </span>
+                    </div>
+                    <div className="p-3 font-mono text-sm text-gray-400">
+                      {new Date(trade.createdAt).toLocaleDateString()}
+                    </div>
+                    <div className="p-3 font-mono text-sm text-gray-400">
                       {trade.status === "closed" && trade.updatedAt
-                        ? new Date(trade.updatedAt).toLocaleString()
+                        ? new Date(trade.updatedAt).toLocaleDateString()
                         : "-"}
-                    </td>
-                  </tr>
+                    </div>
+                  </div>
                 );
               })}
-            </tbody>
-          </table>
+            </div>
+          </div>
+        ) : (
+          <div className="flex justify-center items-center h-64">
+            <Loader className="text-blue-400" size="lg" />
+          </div>
+        )}
+      </main>
+
+      {/* Status Bar */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 py-2 px-8 text-xs text-gray-400 flex justify-between">
+        <div>
+          SYSTEM STATUS: <span className="text-green-400">OPERATIONAL</span>
         </div>
-      ) : (
-        <Loader className="text-cyan-500 mx-auto mt-8" size="lg" />
-      )}
+        <div>LAST UPDATE: {new Date().toLocaleTimeString()}</div>
+        <div>VERSION: 2.0.1</div>
+      </footer>
     </div>
   );
 };

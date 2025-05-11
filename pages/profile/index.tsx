@@ -1332,6 +1332,23 @@ const ProfilePage = () => {
                 </select>
               </div>
               <div>
+                <Text className="text-sm text-cyan-400 mb-1">
+                  Изначальнй баланс
+                </Text>
+                <input
+                  type="number"
+                  className="w-full bg-gray-800/30 border border-cyan-400/30 rounded-lg p-2 text-white focus:border-pink-400/30 focus:outline-none"
+                  value={selectedAccount.firstBalance}
+                  onChange={(e) =>
+                    setSelectedAccount({
+                      ...selectedAccount,
+                      firstBalance: Number(e.target.value),
+                    })
+                  }
+                  min="0"
+                />
+              </div>
+              <div>
                 <Text className="text-sm text-cyan-400 mb-1">Демо баланс</Text>
                 <input
                   type="number"
